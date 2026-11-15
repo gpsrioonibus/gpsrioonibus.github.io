@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Ônibus do Rio ao vivo</title>
+  <meta name="description" content="Veja no mapa onde estão os ônibus de uma linha do Rio de Janeiro, em tempo real, e quanto tempo a viagem costuma levar.">
+  <meta name="theme-color" content="#F3F5F7">
+  <script>
+    /* Define o tema antes da primeira pintura, para a página não piscar. */
+    (function () {
+      var t = 'light';
+      try {
+        t = localStorage.getItem('theme');
+        if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      } catch (e) {}
+      document.documentElement.setAttribute('data-theme', t);
+    })();
+  </script>
+  <link rel="stylesheet" href="leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1 class="sr-only">Ônibus do Rio ao vivo</h1>
+
+  <div id="map" role="application" aria-label="Mapa com a posição dos ônibus"></div>
+
+  <header class="topbar">
+    <div class="search-wrap">
+      <form class="search" id="search-form" role="search" autocomplete="off">
+        <svg class="ico" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="q" type="search" placeholder="Número da linha" aria-label="Buscar linha de ônibus"
+               role="combobox" aria-expanded="false" aria-controls="suggest" aria-autocomplete="list"
+               autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="search">
+      </form>
+      <ul id="suggest" role="listbox" aria-label="Linhas encontradas" hidden></ul>
+    </div>
+    <button id="theme" class="icon-btn" type="button" aria-label="Alternar entre tema claro e escuro">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+    </button>
+  </header>
+
+  <section class="sheet" id="sheet" data-snap="peek" aria-label="Informações da linha">
+    <div class="drag" id="drag">
+      <div class="grip" id="grip" role="button" tabindex="0" aria-label="Expandir ou recolher o painel"><span></span></div>
+      <div class="sign" id="sign"></div>
+      <div class="progress" id="progress" aria-hidden="true"><i></i></div>
+    </div>
+    <div class="routes" id="routes" hidden></div>
+    <div class="status" id="status" role="status" aria-live="polite" hidden></div>
+    <div class="tabs" id="tabs" role="tablist" hidden>
+      <button class="tab" id="tab-now" role="tab" aria-selected="true" aria-controls="panel-now" type="button">Agora</button>
+      <button class="tab" id="tab-trip" role="tab" aria-selected="false" aria-controls="panel-trip" type="button">Tempo de viagem</button>
+    </div>
+    <div class="body" id="body">
+      <div id="panel-empty"></div>
+      <div id="panel-now" role="tabpanel" aria-labelledby="tab-now" hidden></div>
+      <div id="panel-trip" role="tabpanel" aria-labelledby="tab-trip" hidden></div>
+    </div>
+  </section>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript><p class="noscript">Este site precisa de JavaScript para mostrar o mapa.</p></noscript>
+
+  <script src="protobuf.min.js"></script>
+  <script src="leaflet.js"></script>
+  <script src="gtfs.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
