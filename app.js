@@ -9,7 +9,10 @@
   /* ------------------------------------------------------------ configuração */
   var CONFIG = {
     // Para usar um servidor intermediário (ver README, seção CORS), troque este endereço.
-    feedUrl: 'https://gpsrioonibus.hcboaro.workers.dev/',
+    //feedUrl: 'https://gpsrioonibus.hcboaro.workers.dev/',
+    feedUrl: (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+     ? '/feed'
+     : 'https://gpsrioonibus.hcboaro.workers.dev',
     refreshMs: 30000,       // intervalo entre atualizações
     staleSec: 300,          // acima disso o carro é mostrado como "sem sinal"
     feedOldSec: 180,        // acima disso o feed inteiro é considerado parado
@@ -166,7 +169,64 @@
   }
 
   /* ------------------------------------------------------------ veículos */
-  function dirIdx(v) { return v.directionId === 0 || v.directionId === 1 ? v.directionId : 'x'; }
+    var GEO = { maxDist: 80, minSpeed: 3, maxAngle: 70, tie: 15 };
+
+  function angDiff(a, b) { var d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+
+  // melhor segmento do trajeto (o mais próximo) cujo rumo difere do rumo do carro em até maxAngle
+  function nearestAligned(v, linhas) {
+    var kx = Math.cos(v.lat * Math.PI / 180) * 111320, ky = 110540, best = null;
+    for (var j = 0; j < linhas.length; j++) {
+      var l = linhas[j];
+      for (var k = 0; k + 1 < l.length; k++) {
+        var ax = (l[k][0] - v.lon) * kx, ay = (l[k][1] - v.lat) * ky;
+        var bx = (l[k + 1][0] - v.lon) * kx, by = (l[k + 1][1] - v.lat) * ky;
+        var dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+        if (len2 === 0) continue;
+        var t = clamp(-(ax * dx + ay * dy) / len2, 0, 1);
+        var px = ax + t * dx, py = ay + t * dy, dist = Math.sqrt(px * px + py * py);
+        if (dist > GEO.maxDist || (best && dist >= best.dist)) continue;
+        var brg = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+        var ad = angDiff(brg, v.bearing);
+        if (ad <= GEO.maxAngle) best = { dist: dist, ang: ad };
+      }
+    }
+    return best;
+  }
+
+  // 0 ou 1 pelo trajeto; null quando o carro está parado, sem rumo, longe do trajeto ou ambíguo
+  function geoDir(v) {
+    if (v.bearing == null || v.speedKmh == null || v.speedKmh < GEO.minSpeed) return null;
+    var c = S.trechos.slice(0, 2).map(function (t) { return nearestAligned(v, t.linhas || []); });
+    if (c[0] && c[1]) {
+      // dois trajetos sobrepostos e no mesmo sentido: a geometria não decide
+      if (Math.abs(c[0].dist - c[1].dist) < GEO.tie && Math.abs(c[0].ang - c[1].ang) < 30) return null;
+      return (c[0].dist + c[0].ang * 0.5) <= (c[1].dist + c[1].ang * 0.5) ? 0 : 1;
+    }
+    return c[0] ? 0 : c[1] ? 1 : null;
+  }
+
+  function assignDirections(list) {
+    var agree = 0, differ = 0;
+    list.forEach(function (v) {
+      v.geo = geoDir(v);
+      if (v.geo != null && (v.directionId === 0 || v.directionId === 1)) {
+        if (v.geo === v.directionId) agree++; else differ++;
+      }
+    });
+    // se na maioria dos carros em movimento o feed contradiz a geometria, a ordem dos trajetos
+    // está invertida nesta linha: o direction_id dos carros parados também é invertido
+    var flip = differ >= 2 && differ > agree;
+    S.dirStats = { agree: agree, differ: differ, flip: flip };
+    list.forEach(function (v) {
+      var feedDir = (v.directionId === 0 || v.directionId === 1) ? (flip ? 1 - v.directionId : v.directionId) : null;
+      v.dir = v.geo != null ? v.geo : feedDir;
+    });
+  }
+  
+  
+  //function dirIdx(v) { return v.directionId === 0 || v.directionId === 1 ? v.directionId : 'x'; }
+  function dirIdx(v) { return v.dir === 0 || v.dir === 1 ? v.dir : 'x'; }
   function refTime() { return S.feed && S.feed.timestamp ? S.feed.timestamp : Date.now() / 1000; }
   function vehAge(v) { return v.timestamp ? Math.max(0, refTime() - v.timestamp) : null; }
   function vehStatus(v) {
@@ -177,8 +237,12 @@
   function visibleVehicles() {
     return S.vehicles.filter(function (v) { var d = dirIdx(v); return d === 'x' || !S.hidden[d]; });
   }
+  //function destinoDe(v) {
+  //  var t = S.trechos[v.directionId];
+  // return t && t.destino ? t.destino : null;
+  //}
   function destinoDe(v) {
-    var t = S.trechos[v.directionId];
+    var d = dirIdx(v), t = d === 'x' ? null : S.trechos[d];
     return t && t.destino ? t.destino : null;
   }
 
@@ -399,7 +463,7 @@
     if (!S.linha) { els.routes.hidden = true; els.routes.innerHTML = ''; return; }
     els.routes.hidden = false;
     var c = { 0: 0, 1: 0 };
-    S.vehicles.forEach(function (v) { if (v.directionId === 0 || v.directionId === 1) c[v.directionId]++; });
+    S.vehicles.forEach(function (v) { var d = dirIdx(v); if (d === 0 || d === 1) c[d]++; });;
     els.routes.innerHTML = S.trechos.slice(0, 2).map(function (t, i) {
       var n = c[i], nome = t.destino || ('Sentido ' + (i + 1));
       return '<button class="chip dir-' + i + '" type="button" data-dir="' + i + '" aria-pressed="' + (!S.hidden[i]) + '"' +
@@ -659,6 +723,7 @@
   function applyFeed() {
     if (!S.feed || !S.linha) return;
     S.vehicles = matchLine();
+    assignDirections(S.vehicles);
     syncMarkers();
     renderChips();
     renderStatus();
