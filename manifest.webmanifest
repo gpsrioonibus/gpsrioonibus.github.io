@@ -1,6 +1,6 @@
 {
-  "name": "Ônibus do Rio ao vivo",
-  "short_name": "Ônibus Rio",
+  "name": "GPS Rio Ônibus",
+  "short_name": "GPS Rio Ônibus",
   "description": "Onde estão os ônibus de uma linha do Rio de Janeiro, em tempo real.",
   "lang": "pt-BR",
   "start_url": "./",
