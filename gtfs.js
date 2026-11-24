@@ -113,6 +113,9 @@
     var r = String(routeId == null ? '' : routeId).replace(/\s+/g, '');
     if (!l || !r) return false;
     if (r.toLowerCase() === l.toLowerCase()) return true;
+    if (/^2000.{2,}\d{4}$/.test(r)) {
+    return r.slice(4, -4).replace(/^0+/, '').toLowerCase() === l.replace(/^0+/, '').toLowerCase();
+    }
     return new RegExp('(^|[^0-9])0*' + escapeRe(l) + '(?![0-9])', 'i').test(r);
   }
 
