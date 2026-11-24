@@ -7,12 +7,15 @@
   'use strict';
 
   /* ------------------------------------------------------------ configuração */
+  var LOCAL = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   var CONFIG = {
     // Para usar um servidor intermediário (ver README, seção CORS), troque este endereço.
     //feedUrl: 'https://gpsrioonibus.hcboaro.workers.dev/',
-    feedUrl: (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-     ? '/feed'
-     : 'https://gpsrioonibus.hcboaro.workers.dev',
+    // feedUrl: (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+    //  ? '/feed'
+    //  : 'https://gpsrioonibus.hcboaro.workers.dev',
+    feedUrl: LOCAL ? '/feed' : 'https://gpsrioonibus.hcboaro.workers.dev',
+    feedBrtUrl: LOCAL ? '/feed-brt' : 'https://gpsrioonibus.hcboaro.workers.dev/brt',
     refreshMs: 30000,       // intervalo entre atualizações
     staleSec: 300,          // acima disso o carro é mostrado como "sem sinal"
     feedOldSec: 180,        // acima disso o feed inteiro é considerado parado
@@ -89,7 +92,7 @@
   var S = {
     itins: null, viagens: null, keys: [], keyIndex: {},
     linha: null, trechos: [], bounds: null,
-    feed: null, vehicles: [], lastOk: null, fetching: false, error: null, timer: null,
+    feed: null, kind:'onibus', vehicles: [], lastOk: null, fetching: false, error: null, timer: null,
     hidden: { 0: false, 1: false },
     tab: 'now', tipoDia: null, sentido: 0, hora: null,
     snap: 'peek', vis: 200, theme: 'light', signIdx: 0, signTimer: null
@@ -592,7 +595,7 @@
         (S.feed.timestamp ? 'Hora do feed: <code>' + fmtClock(S.feed.timestamp * 1000) + '</code>.<br>' : '') +
         'Exemplos de route_id: <code>' + (samples.length ? esc(samples.join(', ')) : 'nenhum') + '</code></p>' +
         (!S.vehicles.length && total ? '<p>Se a linha deveria aparecer, o route_id pode usar outro padrão de nome. Veja a seção "route_id" do README.</p>' : '') +
-        '<p>Endereço: <code>' + esc(CONFIG.feedUrl) + '</code></p></details>');
+        '<p>Endereço: <code>' + esc(feedUrlFor(S.kind)) + '</code></p></details>');
     }
     out.push('<p class="credits">Posições: SMTR, Prefeitura da Cidade do Rio de Janeiro. Mapa: &copy; OpenStreetMap.</p>');
     els.panelNow.innerHTML = out.join('');
@@ -740,25 +743,62 @@
     S.timer = setTimeout(refresh, CONFIG.refreshMs);
   }
 
+  // function refresh() {
+  //   if (S.fetching || !S.linha) return;
+  //   S.fetching = true;
+  //   clearTimeout(S.timer);
+  //   var ctrl = new AbortController();
+  //   var to = setTimeout(function () { ctrl.abort(); }, CONFIG.fetchTimeoutMs);
+  //   fetch(CONFIG.feedUrl, { cache: 'no-store', signal: ctrl.signal })
+  //     .then(function (r) {
+  //       if (!r.ok) { var e = new Error('HTTP ' + r.status); e.kind = 'http'; e.status = r.status; throw e; }
+  //       return r.arrayBuffer();
+  //     })
+  //     .then(function (buf) {
+  //       try { S.feed = GTFS.decodeFeed(buf); }
+  //       catch (err) { var e = new Error(String(err && err.message || err)); e.kind = 'decode'; throw e; }
+  //       S.lastOk = Date.now();
+  //       S.error = null;
+  //       applyFeed();
+  //     })
+  //     .catch(function (err) {
+  //       S.error = classify(err);
+  //       renderStatus();
+  //       renderNow();
+  //     })
+  //     .then(function () {
+  //       clearTimeout(to);
+  //       S.fetching = false;
+  //       schedule();
+  //     });
+  // }
+
+  function feedUrlFor(kind) { return kind === 'brt' ? CONFIG.feedBrtUrl : CONFIG.feedUrl; }
+
   function refresh() {
     if (S.fetching || !S.linha) return;
     S.fetching = true;
     clearTimeout(S.timer);
+    var kind = S.kind;
     var ctrl = new AbortController();
     var to = setTimeout(function () { ctrl.abort(); }, CONFIG.fetchTimeoutMs);
-    fetch(CONFIG.feedUrl, { cache: 'no-store', signal: ctrl.signal })
+    fetch(feedUrlFor(kind), { cache: 'no-store', signal: ctrl.signal })
       .then(function (r) {
         if (!r.ok) { var e = new Error('HTTP ' + r.status); e.kind = 'http'; e.status = r.status; throw e; }
         return r.arrayBuffer();
       })
       .then(function (buf) {
-        try { S.feed = GTFS.decodeFeed(buf); }
+        var feed;
+        try { feed = GTFS.decodeFeed(buf); }
         catch (err) { var e = new Error(String(err && err.message || err)); e.kind = 'decode'; throw e; }
+        if (kind !== S.kind) return; // a linha escolhida mudou de tipo durante a consulta
+        S.feed = feed;
         S.lastOk = Date.now();
         S.error = null;
         applyFeed();
       })
       .catch(function (err) {
+        if (kind !== S.kind) return;
         S.error = classify(err);
         renderStatus();
         renderNow();
@@ -766,7 +806,7 @@
       .then(function () {
         clearTimeout(to);
         S.fetching = false;
-        schedule();
+        if (kind !== S.kind) refresh(); else schedule();
       });
   }
 
@@ -776,6 +816,8 @@
     if (!key) { toast('Não encontramos a linha ' + input + '. Confira o número e tente de novo.'); return false; }
     S.linha = key;
     S.trechos = S.itins[key].trechos || [];
+    var kind = S.itins[key].brt ? 'brt' : 'onibus';
+    if (kind !== S.kind) { S.kind = kind; S.feed = null; S.lastOk = null; }
     S.hidden = { 0: false, 1: false };
     S.vehicles = [];
     S.tipoDia = null; S.hora = null; S.sentido = 0;
